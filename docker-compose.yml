@@ -1,0 +1,135 @@
+version: "3.9"
+
+services:
+  # Relational Database for metadata and chat history
+  relational-db:
+    image: postgres:15
+    container_name: relational-db
+    environment:
+      POSTGRES_USER: bookworm
+      POSTGRES_PASSWORD: bookwormpass
+      POSTGRES_DB: bookwormdb
+    volumes:
+      - relational-db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # Vector Database for embeddings
+  vector-db:
+    image: chromadb/chroma:latest
+    container_name: vector-db
+    volumes:
+      - vector-db-data:/data
+    ports:
+      - "8000:8000"
+
+  # Local File Storage for books
+  lake-accessor:
+    build:
+      context: ./apps/lake-accessor
+    container_name: lake-accessor
+    ports:
+      - "8001:8000"
+    volumes:
+      - book-files:/app/storage
+    depends_on:
+      - relational-db
+
+  # Relational Accessor Service
+  relational-accessor:
+    build:
+      context: ./apps/relational-accessor
+    container_name: relational-accessor
+    ports:
+      - "8002:8000"
+    environment:
+      DB_HOST: relational-db
+      DB_PORT: 5432
+      DB_NAME: bookwormdb
+      DB_USER: bookworm
+      DB_PASSWORD: bookwormpass
+    depends_on:
+      - relational-db
+
+  # Vector Accessor Service
+  vector-accessor:
+    build:
+      context: ./apps/vector-accessor
+    container_name: vector-accessor
+    ports:
+      - "8003:8000"
+    depends_on:
+      - vector-db
+
+  # Embedding Engine Service
+  embedding-engine:
+    build:
+      context: ./apps/embedding-engine
+    container_name: embedding-engine
+    ports:
+      - "8004:8000"
+
+  # LLM Engine Service
+  llm-engine:
+    build:
+      context: ./apps/llm-engine
+    container_name: llm-engine
+    ports:
+      - "8005:8000"
+
+  # LLM Manager Service
+  llm-manager:
+    build:
+      context: ./apps/llm-manager
+    container_name: llm-manager
+    ports:
+      - "8006:8000"
+    depends_on:
+      - llm-engine
+
+  # Query Engine Service
+  query-engine:
+    build:
+      context: ./apps/query-engine
+    container_name: query-engine
+    ports:
+      - "8007:8000"
+    depends_on:
+      - vector-accessor
+      - relational-accessor
+
+  # Chat Manager Service
+  chat-manager:
+    build:
+      context: ./apps/chat-manager
+    container_name: chat-manager
+    ports:
+      - "8008:8000"
+    depends_on:
+      - query-engine
+      - llm-manager
+
+  # Book Manager Service
+  book-manager:
+    build:
+      context: ./apps/book-manager
+    container_name: book-manager
+    ports:
+      - "8009:8000"
+    depends_on:
+      - embedding-engine
+      - lake-accessor
+      - relational-accessor
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+    container_name: bookworm-frontend
+    ports:
+      - "3000:3000"
+
+volumes:
+  relational-db-data:
+  vector-db-data:
+  book-files:
